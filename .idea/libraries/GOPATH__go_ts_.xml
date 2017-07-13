@@ -1,0 +1,33 @@
+<component name="libraryTable">
+  <library name="GOPATH &lt;go-ts&gt;">
+    <CLASSES>
+      <root url="file://$PROJECT_DIR$/../learn" />
+      <root url="file://$PROJECT_DIR$/../gortmp" />
+      <root url="file://$PROJECT_DIR$/../.git" />
+      <root url="file://$PROJECT_DIR$/../github.com" />
+      <root url="file://$PROJECT_DIR$/../go-oryx" />
+      <root url="file://$PROJECT_DIR$/../go-oryx-lib" />
+      <root url="file://$PROJECT_DIR$/../ts_info" />
+      <root url="file://$PROJECT_DIR$/../go-avc" />
+      <root url="file://$PROJECT_DIR$/../go-flv" />
+      <root url="file://$PROJECT_DIR$/../grs" />
+      <root url="file://$PROJECT_DIR$/../go_web" />
+    </CLASSES>
+    <SOURCES>
+      <root url="file://$PROJECT_DIR$/../learn" />
+      <root url="file://$PROJECT_DIR$/../gortmp" />
+      <root url="file://$PROJECT_DIR$/../.git" />
+      <root url="file://$PROJECT_DIR$/../github.com" />
+      <root url="file://$PROJECT_DIR$/../go-oryx" />
+      <root url="file://$PROJECT_DIR$/../go-oryx-lib" />
+      <root url="file://$PROJECT_DIR$/../ts_info" />
+      <root url="file://$PROJECT_DIR$/../go-avc" />
+      <root url="file://$PROJECT_DIR$/../go-flv" />
+      <root url="file://$PROJECT_DIR$/../grs" />
+      <root url="file://$PROJECT_DIR$/../go_web" />
+    </SOURCES>
+    <excluded>
+      <root url="file://$PROJECT_DIR$" />
+    </excluded>
+  </library>
+</component>
