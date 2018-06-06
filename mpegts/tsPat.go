@@ -1,64 +1,143 @@
 package mpegts
 
-/*
-	doc/ios13818规范（中文）.pdf - 2.4.4.5 节目相关分段中字段的语义定义
-*/
+import "fmt"
+import "go-ts/bitbuffer"
 
 // Pat Program Map Table.
 type Pat struct {
-	tableID                uint8  //1B-固定为0x00 ，标志是该表是PAT表
-	sectionSyntaxIndicator uint8  //1bit-段语法标志位，固定为1
-	const0Value            uint8  //1bit-0
-	reserved1              uint8  //2bit-保留位
-	sectionLength          uint16 //12bit-头两比特必为‘00’， 剩余 10 比特指定该分段的字节数，紧随分段长度字段开始，并包括CRC。
-	transportStreamID      uint16 //16bit-标识网络内此传输流有别于任何其他多路复用流
-	reserved2              uint8  //2bit-保留位
-	versionNumber          uint8  //5bit-整个节目相关表的版本号
-	currentNextIndicator   uint8  //1bit-指示发送的节目相关表为当前有效
-	sectionNumber          uint8  //8bit-给出此分段的编号
-	lastSectionNumber      uint8  //8bit-指定完整节目相关表的最后分段编号
+	startFlag         bool
+	continuityCounter uint8
+	buf               []byte
+	pmtPid            uint16
+
+	tableID                uint8
+	sectionSyntaxIndicator uint8
+	sectionLength          uint16
+	transportStreamID      uint16
+	versionNumber          uint8
+	currentNextIndicator   uint8
+	sectionNumber          uint8
+	lastSectionNumber      uint8
 	programInfo            []PatProgramInfo
-	crc32                  uint32 //32bit
+	crc32                  uint32
 }
 
 // PatProgramInfo Program Info of mpeg.
 type PatProgramInfo struct {
-	programNumber uint16 //16bit-它指定 program_map_PID 所适用的节目
-	reserved      uint8  //3bit-保留位
-	networkPid    uint16 //13bit-仅同设置为 0x0000 值的 program_number 一起使用
-	programMapPid uint16 //13bit
+	programNumber uint16
+	networkPid    uint16
+	programMapPid uint16
 }
 
-// new pat parse
-func NewPatParse() (pat *Pat) {
-	return new(Pat)
+// NewPat create new PAT instance
+func NewPat() *Pat { return new(Pat) }
+
+// ContinuityCounter return current continuity_counter of TsPacket.
+func (p *Pat) ContinuityCounter() uint8 { return p.continuityCounter }
+
+// SetContinuityCounter set current continuity_counter of TsPacket.
+func (p *Pat) SetContinuityCounter(continuityCounter uint8) { p.continuityCounter = continuityCounter }
+
+// PmtPid return PMT pid.
+func (p *Pat) PmtPid() uint16 { return p.pmtPid }
+
+// Append append ts payload data for buffer.
+func (p *Pat) Append(buf []byte) {
+	p.buf = append(p.buf, buf...)
 }
 
-// parse pat
-func (pat *Pat) parsePATSection(buf []byte) (err error) {
-	pat.tableID = uint8(buf[0])
-	pat.sectionSyntaxIndicator = uint8(buf[1] & 0x80)
-	pat.const0Value = 0
-	pat.sectionLength = uint16((buf[1]&0x0F)<<4 | buf[2])
-	pat.transportStreamID = uint16(buf[3]<<8 | buf[4])
-	pat.versionNumber = uint8(buf[5] & 0x3E)
-	pat.currentNextIndicator = uint8(buf[5] & 0x01)
-	pat.sectionNumber = uint8(buf[6])
-	pat.lastSectionNumber = uint8(buf[7])
+// Parse PAT data.
+func (p *Pat) Parse() error {
+	bb := new(bitbuffer.BitBuffer)
+	bb.Set(p.buf)
 
-	progSize := int((pat.sectionLength)-9) / 4
-	index := 8
-	for i := 0; i < progSize; i++ {
+	var err error
+	if p.tableID, err = bb.PeekUint8(8); err != nil {
+		return err
+	}
+	if p.sectionSyntaxIndicator, err = bb.PeekUint8(1); err != nil {
+		return err
+	}
+	if err = bb.Skip(1); err != nil {
+		return err
+	} // ()
+	if err = bb.Skip(2); err != nil {
+		return err
+	} // reserved
+	if p.sectionLength, err = bb.PeekUint16(12); err != nil {
+		return err
+	}
+	if p.transportStreamID, err = bb.PeekUint16(16); err != nil {
+		return err
+	}
+	if err = bb.Skip(2); err != nil {
+		return err
+	} // reserved
+	if p.versionNumber, err = bb.PeekUint8(5); err != nil {
+		return err
+	}
+	if p.currentNextIndicator, err = bb.PeekUint8(1); err != nil {
+		return err
+	}
+	if p.sectionNumber, err = bb.PeekUint8(8); err != nil {
+		return err
+	}
+	if p.lastSectionNumber, err = bb.PeekUint8(8); err != nil {
+		return err
+	}
+
+	for i := 0; i < ((int(p.sectionLength) - 9) / 4); i++ {
 		var patProgramInfo PatProgramInfo
-		patProgramInfo.programNumber = uint16(buf[index]<<8 | buf[index+1])
-		index += 2
-		if patProgramInfo.programNumber == 0x00 {
-			patProgramInfo.networkPid = uint16((buf[index]&0x1F)<<8 | (buf[index+1]))
-		} else {
-			patProgramInfo.programMapPid = uint16((buf[index]&0x1F)<<8 | (buf[index+1]))
+		if patProgramInfo.programNumber, err = bb.PeekUint16(16); err != nil {
+			return err
 		}
-		index += 2
+		if err = bb.Skip(3); err != nil {
+			return err
+		} // reserved
+		if patProgramInfo.programNumber == 0 {
+			if patProgramInfo.networkPid, err = bb.PeekUint16(13); err != nil {
+				return err
+			}
+		} else {
+			if patProgramInfo.programMapPid, err = bb.PeekUint16(13); err != nil {
+				return err
+			}
+			p.pmtPid = patProgramInfo.programMapPid
+		}
+		p.programInfo = append(p.programInfo, patProgramInfo)
+	}
+	if p.crc32, err = bb.PeekUint32(32); err != nil {
+		return err
+	}
+
+	if len(p.buf) >= int(3+p.sectionLength-4) && p.crc32 != crc32(p.buf[0:3+p.sectionLength-4]) {
+		return fmt.Errorf("PAT CRC32 is invalidate")
 	}
 
 	return nil
+}
+
+// Dump PAT detail.
+func (p *Pat) Dump() {
+	fmt.Printf("\n===========================================\n")
+	fmt.Printf(" PAT")
+	fmt.Printf("\n===========================================\n")
+	fmt.Printf("PAT : table_id			: 0x%x\n", p.tableID)
+	fmt.Printf("PAT : section_syntax_indicator	: %d\n", p.sectionSyntaxIndicator)
+	fmt.Printf("PAT : section_length		: %d\n", p.sectionLength)
+	fmt.Printf("PAT : transport_stream_id	: %d\n", p.transportStreamID)
+	fmt.Printf("PAT : version_number		: %d\n", p.versionNumber)
+	fmt.Printf("PAT : current_next_indicator	: %d\n", p.currentNextIndicator)
+	fmt.Printf("PAT : section_number		: %d\n", p.sectionNumber)
+	fmt.Printf("PAT : last_section_number	: %d\n", p.lastSectionNumber)
+
+	for _, val := range p.programInfo {
+		fmt.Printf("PAT : program_number		: %d\n", val.programNumber)
+		if val.programNumber == 0 {
+			fmt.Printf("PAT : network_PID		: 0x%x\n", val.networkPid)
+		} else {
+			fmt.Printf("PAT : program_map_PID		: 0x%x\n", val.programMapPid)
+		}
+	}
+	fmt.Printf("PAT : CRC_32			: %x\n", p.crc32)
 }

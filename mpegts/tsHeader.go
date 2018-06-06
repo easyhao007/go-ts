@@ -2,8 +2,8 @@ package mpegts
 
 import (
 	"errors"
-	"go-ts/bitbuffer"
 	"fmt"
+	"go-ts/bitbuffer"
 )
 
 const (

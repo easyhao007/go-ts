@@ -1,230 +1,290 @@
 package mpegts
 
 import (
-	"go-ts/bitbuffer"
 	"fmt"
+	"go-ts/bitbuffer"
 )
 
-type TsAdaptationField struct {
-	AdaptationFieldLength                  uint8  //8bit
-	DiscontinuityIndicator                 uint8  //1bit
-	RandomAccessIndicator                  uint8  //1bit
-	ElementaryStreamPriorityIndicator      uint8  //1bit
-	PcrFlag                                uint8  //1bit
-	OpcrFlag                               uint8  //1bit
-	SplicingPointFlag                      uint8  //1bit
-	TransportPrivateDataFlag               uint8  //1bit
-	AdaptationFieldExtensionFlag           uint8  //1bit
-	ProgramClockReferenceBase              uint64 //33bit
-	ProgramClockReferenceExtension         uint16 //9bit
-	OriginalProgramClockReferenceBase      uint64 //33bit
-	OriginalProgramClockReferenceExtension uint16 //9bit
-	SpliceCountdown                        uint8  //8bit
-	TransportPrivateDataLength             uint8  // 8bit
-	TransportPrivateData                   []byte
-	AdaptationFieldExtensionLength         uint8  //8bit
-	LtwFlag                                uint8  //1bit
-	PiecewiseRateFlag                      uint8  //1bit -> 分段
-	SeamlessSpliceFlag                     uint8  //1bit
-	LtwValidFlag                           uint8  //1bit
-	LtwOffset                              uint16 //15bit
-	PiecewiseRate                          uint32 // 2bit
-	SpliceType                             uint8  //4bit
-	DtsNextAu0                             uint8  // 3bit
-	MarkerBit0                             uint8  // 1bit
-	DtsNextAu1                             uint16 // 15bit
-	MarkerBit1                             uint8  // 1bit
-	DtsNextAu2                             uint16 // 15bit
-	MarkerBit2                             uint8  // 1bit
-	AfExtReserved                          []byte
-	AfReserved                             []byte
+// AdaptationField adaptation_field data.
+type AdaptationField struct {
+	pcr uint64
+	pos int64
+	buf []byte
+
+	adaptationFieldLength                  uint8
+	discontinuityIndicator                 uint8
+	randomAccessIndicator                  uint8
+	elementaryStreamPriorityIndicator      uint8
+	pcrFlag                                uint8
+	oPcrFlag                               uint8
+	splicingPointFlag                      uint8
+	transportPrivateDataFlag               uint8
+	adaptationFieldExtensionFlag           uint8
+	programClockReferenceBase              uint64
+	programClockReferenceExtension         uint16
+	originalProgramClockReferenceBase      uint64
+	originalProgramClockReferenceExtension uint16
+	spliceCountdown                        uint8
+	transportPrivateDataLength             uint8
+	privateDataByte                        []byte
+	adaptationFieldExtensionLength         uint8
+	ltwFlag                                uint8
+	piecewiseRateFlag                      uint8
+	seamlessSpliceFlag                     uint8
+	ltwValidFlag                           uint8
+	ltwOffset                              uint16
+	piecewiseRate                          uint32
+	spliceType                             uint8
+	dtsNextAu                              uint32
 }
 
-func (ad *TsAdaptationField) Demux(buf []byte) (err error) {
-	//设置buf到bitbuffer
+// NewAdaptationField create new adaptation_field instance.
+func NewAdaptationField() *AdaptationField {
+	af := new(AdaptationField)
+	af.buf = make([]byte, 0, tsPacketSize)
+	af.privateDataByte = make([]byte, 0, tsPacketSize)
+	return af
+}
+
+// Initialize Set Params for TsPacket
+func (af *AdaptationField) Initialize(pos int64) {
+	af.pcr = 0
+	af.pos = pos
+	af.buf = af.buf[0:0]
+
+	af.adaptationFieldLength = 0
+	af.discontinuityIndicator = 0
+	af.randomAccessIndicator = 0
+	af.elementaryStreamPriorityIndicator = 0
+	af.pcrFlag = 0
+	af.oPcrFlag = 0
+	af.splicingPointFlag = 0
+	af.transportPrivateDataFlag = 0
+	af.adaptationFieldExtensionFlag = 0
+	af.programClockReferenceBase = 0
+	af.programClockReferenceExtension = 0
+	af.originalProgramClockReferenceBase = 0
+	af.originalProgramClockReferenceExtension = 0
+	af.spliceCountdown = 0
+	af.transportPrivateDataLength = 0
+	af.privateDataByte = af.privateDataByte[0:0]
+	af.adaptationFieldExtensionLength = 0
+	af.ltwFlag = 0
+	af.piecewiseRateFlag = 0
+	af.seamlessSpliceFlag = 0
+	af.ltwValidFlag = 0
+	af.ltwOffset = 0
+	af.piecewiseRate = 0
+	af.spliceType = 0
+	af.dtsNextAu = 0
+}
+
+// Append append adaptation_field data for buffer.
+func (af *AdaptationField) Append(buf []byte) {
+	af.buf = append(af.buf, buf...)
+}
+
+// PcrFlag return this adaptation_field PCR_flag.
+func (af *AdaptationField) PcrFlag() bool { return af.pcrFlag == 1 }
+
+// Pcr return this adaptation_field PCR.
+func (af *AdaptationField) Pcr() uint64 { return af.pcr }
+
+// Parse parse adaptation_field data.
+func (af *AdaptationField) Parse() (uint8, error) {
 	bb := new(bitbuffer.BitBuffer)
-	bb.Set(buf)
+	bb.Set(af.buf)
 
-	if ad.AdaptationFieldLength, err = bb.PeekUint8(8); err != nil {
-		fmt.Println("AdaptationFieldLength")
-		return err
+	var err error
+	if af.adaptationFieldLength, err = bb.PeekUint8(8); err != nil {
+		return 0, err
 	}
-	if ad.AdaptationFieldLength <= 0{
-		return nil
+	if af.adaptationFieldLength <= 0 {
+		return 0, nil
 	}
-
-	if ad.DiscontinuityIndicator, err = bb.PeekUint8(1); err != nil {
-		fmt.Println("DiscontinuityIndicator")
-		return err
+	if af.discontinuityIndicator, err = bb.PeekUint8(1); err != nil {
+		return 0, err
 	}
-
-	if ad.RandomAccessIndicator, err = bb.PeekUint8(1); err != nil {
-		fmt.Println("RandomAccessIndicator")
-		return err
+	if af.randomAccessIndicator, err = bb.PeekUint8(1); err != nil {
+		return 0, err
 	}
-
-	if ad.ElementaryStreamPriorityIndicator, err = bb.PeekUint8(1); err != nil {
-		fmt.Println("ElementaryStreamPriorityIndicator")
-		return err
+	if af.elementaryStreamPriorityIndicator, err = bb.PeekUint8(1); err != nil {
+		return 0, err
 	}
-
-	if ad.PcrFlag, err = bb.PeekUint8(1); err != nil {
-		fmt.Println("PcrFlag")
-		return err
+	if af.pcrFlag, err = bb.PeekUint8(1); err != nil {
+		return 0, err
 	}
-
-	if ad.OpcrFlag, err = bb.PeekUint8(1); err != nil {
-		fmt.Println("OpcrFlag")
-		return err
+	if af.oPcrFlag, err = bb.PeekUint8(1); err != nil {
+		return 0, err
 	}
-
-	if ad.SplicingPointFlag, err = bb.PeekUint8(1); err != nil {
-		fmt.Println("SplicingPointFlag")
-		return err
+	if af.splicingPointFlag, err = bb.PeekUint8(1); err != nil {
+		return 0, err
 	}
-
-	if ad.TransportPrivateDataFlag, err = bb.PeekUint8(1); err != nil {
-		fmt.Println("TransportPrivateDataFlag")
-		return err
+	if af.transportPrivateDataFlag, err = bb.PeekUint8(1); err != nil {
+		return 0, err
 	}
-
-	if ad.AdaptationFieldExtensionFlag, err = bb.PeekUint8(1); err != nil {
-		fmt.Println("AdaptationFieldExtensionFlag")
-		return err
+	if af.adaptationFieldExtensionFlag, err = bb.PeekUint8(1); err != nil {
+		return 0, err
 	}
-
-	if ad.PcrFlag == 1 {
-		//33bit
-		if ad.ProgramClockReferenceBase, err = bb.PeekUint64(33); err != nil {
-			fmt.Println("ProgramClockReferenceBase")
-			return err
+	if af.pcrFlag == 1 {
+		if af.programClockReferenceBase, err = bb.PeekUint64(33); err != nil {
+			return 0, err
 		}
-		//reserved 6bit
-		if err = bb.Skip(6); err != nil {
-			return err
-		}
-		//9bit
-		if ad.ProgramClockReferenceExtension, err = bb.PeekUint16(9); err != nil {
-			fmt.Println("ProgramClockReferenceExtension")
-			return err
-		}
-	}
-
-	if ad.OpcrFlag == 1 {
-		//33bit
-		if ad.OriginalProgramClockReferenceBase, err = bb.PeekUint64(33); err != nil {
-			fmt.Println("OriginalProgramClockReferenceBase")
-			return err
-		}
-		//reserved 6bit
-		if err = bb.Skip(6); err != nil {
-			return err
-		}
-		//9bit
-		if ad.OriginalProgramClockReferenceExtension, err = bb.PeekUint16(9); err != nil {
-			fmt.Println("OriginalProgramClockReferenceExtension")
-			return err
-		}
-	}
-
-	if ad.SplicingPointFlag == 1 {
-		if ad.SpliceCountdown, err = bb.PeekUint8(8); err != nil {
-			fmt.Println("SpliceCountdown")
-			return err
-		}
-	}
-
-	if ad.TransportPrivateDataFlag == 1 {
-		if ad.TransportPrivateDataLength, err = bb.PeekUint8(8); err != nil {
-			fmt.Println("TransportPrivateDataLength")
-			return err
+		bb.Skip(6) // reserved
+		if af.programClockReferenceExtension, err = bb.PeekUint16(9); err != nil {
+			return 0, err
 		}
 
-		for i := uint8(0); i < ad.TransportPrivateDataLength; i++ {
-			if chunk, err := bb.PeekUint8(8); err != nil {
-				fmt.Println("TransportPrivateData")
-				return err
-			} else {
-				ad.TransportPrivateData = append(ad.TransportPrivateData, chunk)
+		pcrBase := af.programClockReferenceBase
+		pcrExt := uint64(af.programClockReferenceExtension)
+		af.pcr = pcrBase*300 + pcrExt
+	}
+	if af.oPcrFlag == 1 {
+		if af.originalProgramClockReferenceBase, err = bb.PeekUint64(33); err != nil {
+			return 0, err
+		}
+		bb.Skip(6) // reserved
+		if af.originalProgramClockReferenceExtension, err = bb.PeekUint16(9); err != nil {
+			return 0, err
+		}
+	}
+	if af.splicingPointFlag == 1 {
+		if af.spliceCountdown, err = bb.PeekUint8(8); err != nil {
+			return 0, err
+		}
+	}
+	if af.transportPrivateDataFlag == 1 {
+		if af.transportPrivateDataLength, err = bb.PeekUint8(8); err != nil {
+			return 0, err
+		}
+		for i := uint8(0); i < af.transportPrivateDataLength; i++ {
+			chunk, err := bb.PeekUint8(8)
+			if err != nil {
+				return 0, err
+			}
+			af.privateDataByte = append(af.privateDataByte, chunk)
+		}
+	}
+	if af.adaptationFieldExtensionFlag == 1 {
+		if af.adaptationFieldExtensionLength, err = bb.PeekUint8(8); err != nil {
+			return 0, err
+		}
+		if af.ltwFlag, err = bb.PeekUint8(1); err != nil {
+			return 0, err
+		}
+		if af.piecewiseRateFlag, err = bb.PeekUint8(1); err != nil {
+			return 0, err
+		}
+		if af.seamlessSpliceFlag, err = bb.PeekUint8(1); err != nil {
+			return 0, err
+		}
+		if err := bb.Skip(5); err != nil {
+			return 0, err
+		} // reserved
+		if af.ltwFlag == 1 {
+			if af.ltwValidFlag, err = bb.PeekUint8(1); err != nil {
+				return 0, err
+			}
+			if af.ltwOffset, err = bb.PeekUint16(15); err != nil {
+				return 0, err
 			}
 		}
-	}
-
-	if ad.AdaptationFieldExtensionFlag == 1 {
-		if ad.AdaptationFieldExtensionLength, err = bb.PeekUint8(8); err != nil {
-			fmt.Println("AdaptationFieldExtensionLength")
-			return err
-		}
-
-		if ad.LtwFlag, err = bb.PeekUint8(1); err != nil {
-			fmt.Println("LtwFlag")
-			return err
-		}
-
-		if ad.PiecewiseRateFlag, err = bb.PeekUint8(1); err != nil {
-			fmt.Println("PiecewiseRateFlag")
-			return err
-		}
-
-		if ad.SeamlessSpliceFlag, err = bb.PeekUint8(1); err != nil {
-			fmt.Println("SeamlessSpliceFlag")
-			return err
-		}
-
-		if err = bb.Skip(5); err != nil {
-			return err
-		}
-
-		if ad.LtwFlag == 1 {
-			if ad.LtwValidFlag, err = bb.PeekUint8(1); err != nil {
-				fmt.Println("LtwValidFlag")
-				return err
-			}
-
-			if ad.LtwOffset, err = bb.PeekUint16(15); err != nil {
-				fmt.Println("LtwOffset")
-				return err
+		if af.piecewiseRateFlag == 1 {
+			if err := bb.Skip(2); err != nil {
+				return 0, err
+			} // reserved
+			if af.piecewiseRate, err = bb.PeekUint32(22); err != nil {
+				return 0, err
 			}
 		}
-
-		if ad.PiecewiseRateFlag == 1 {
-			if err = bb.Skip(2); err != nil {
-				return err
+		if af.seamlessSpliceFlag == 1 {
+			if af.spliceType, err = bb.PeekUint8(4); err != nil {
+				return 0, err
 			}
-			if ad.PiecewiseRate, err = bb.PeekUint32(22); err != nil {
-				fmt.Println("PiecewiseRate")
-				return err
+			if af.dtsNextAu, err = bb.PeekUint32(3); err != nil {
+				return 0, err
 			}
-		}
-
-		if ad.SeamlessSpliceFlag == 1 {
-			if ad.SpliceType, err = bb.PeekUint8(4); err != nil {
-				fmt.Println("SpliceType")
-				return err
+			af.dtsNextAu <<= 30
+			if err := bb.Skip(1); err != nil {
+				return 0, err
+			} // marker_bit
+			second, err := bb.PeekUint32(15)
+			if err != nil {
+				return 0, err
 			}
-			if ad.DtsNextAu0, err = bb.PeekUint8(3); err != nil {
-				fmt.Println("DtsNextAu0")
-				return err
+			af.dtsNextAu |= second << 15
+			if err := bb.Skip(1); err != nil {
+				return 0, err
+			} // marker_bit
+			third, err := bb.PeekUint32(15)
+			if err != nil {
+				return 0, err
 			}
-			if err = bb.Skip(1); err != nil {
-				return err
-			}
-			if ad.DtsNextAu1, err = bb.PeekUint16(15); err != nil {
-				fmt.Println("DtsNextAu1")
-				return err
-			}
-			if err = bb.Skip(1); err != nil {
-				return err
-			}
-			if ad.DtsNextAu2, err = bb.PeekUint16(15); err != nil {
-				fmt.Println("DtsNextAu2")
-				return err
-			}
-			if err = bb.Skip(1); err != nil {
-				return err
-			}
-
+			af.dtsNextAu |= third
+			if err := bb.Skip(1); err != nil {
+				return 0, err
+			} // marker_bit
 		}
 	}
-	return nil
+
+	return af.adaptationFieldLength, nil
+}
+
+// DumpPcr print PCR.
+func (af *AdaptationField) DumpPcr(prevPcr uint64) {
+	if af.pcrFlag == 1 {
+		pcrMilisec := float64(af.pcr) / 300 / 90
+		pcrInterval := float64(af.pcr-prevPcr) / 300 / 90
+		fmt.Printf("0x%08x PCR: 0x%08x[%012fms] (Interval:%012fms)\n", af.pos, af.pcr, pcrMilisec, pcrInterval)
+	}
+}
+
+// Dump adaptation_field detail.
+func (af *AdaptationField) Dump() {
+	fmt.Printf("Adaptation Field : adaptation_field_length			: %d\n", af.adaptationFieldLength)
+	if af.adaptationFieldLength <= 0 {
+		return
+	}
+	fmt.Printf("Adaptation Field : discontinuity_indicator			: %d\n", af.discontinuityIndicator)
+	fmt.Printf("Adaptation Field : random_access_indicator			: %d\n", af.randomAccessIndicator)
+	fmt.Printf("Adaptation Field : elementary_stream_priority_indicator		: %d\n", af.elementaryStreamPriorityIndicator)
+	fmt.Printf("Adaptation Field : PCR_flag					: %d\n", af.pcrFlag)
+	fmt.Printf("Adaptation Field : OPCR_flag					: %d\n", af.oPcrFlag)
+	fmt.Printf("Adaptation Field : splicing_point_flag				: %d\n", af.splicingPointFlag)
+	fmt.Printf("Adaptation Field : adaptation_field_extension_flag		: %d\n", af.adaptationFieldExtensionFlag)
+	if af.pcrFlag == 1 {
+		fmt.Printf("Adaptation Field : program_clock_reference_base			: %d\n", af.programClockReferenceBase)
+		fmt.Printf("Adaptation Field : program_clock_reference_extension		: %d\n", af.programClockReferenceExtension)
+		pcrBase := af.programClockReferenceBase
+		pcrExt := uint64(af.programClockReferenceExtension)
+		fmt.Printf("Adaptation Field : PCR 0x%x[%fms]\n", pcrBase*300+pcrExt, float64(pcrBase*300+pcrExt)/300/90)
+
+	}
+	if af.oPcrFlag == 1 {
+		fmt.Printf("Adaptation Field : original_program_clock_reference_base	: %d\n", af.originalProgramClockReferenceBase)
+		fmt.Printf("Adaptation Field : original_program_clock_reference_extension	: %d\n", af.originalProgramClockReferenceExtension)
+	}
+	if af.splicingPointFlag == 1 {
+		fmt.Printf("Adaptation Field : splice_countdown				: %d\n", af.spliceCountdown)
+	}
+	if af.transportPrivateDataFlag == 1 {
+		fmt.Printf("Adaptation Field : transport_private_data_length		: %d\n", af.transportPrivateDataLength)
+	}
+	if af.adaptationFieldExtensionFlag == 1 {
+		fmt.Printf("Adaptation Field : adaptation_field_extension_length		: %d\n", af.adaptationFieldExtensionLength)
+		fmt.Printf("Adaptation Field : ltw_flag					: %d\n", af.ltwFlag)
+		fmt.Printf("Adaptation Field : piecewise_rate_flag				: %d\n", af.piecewiseRateFlag)
+		fmt.Printf("Adaptation Field : seamless_splice_flag				: %d\n", af.seamlessSpliceFlag)
+		if af.ltwFlag == 1 {
+			fmt.Printf("Adaptation Field : ltw_valid_flag				: %d\n", af.ltwValidFlag)
+			fmt.Printf("Adaptation Field : ltw_offset					: %d\n", af.ltwOffset)
+		}
+		if af.piecewiseRateFlag == 1 {
+			fmt.Printf("Adaptation Field : piecewise_rate				: %d\n", af.piecewiseRate)
+		}
+		if af.seamlessSpliceFlag == 1 {
+			fmt.Printf("Adaptation Field : splice_type					: %d\n", af.spliceType)
+			fmt.Printf("Adaptation Field : DTS_next_AU					: %d\n", af.dtsNextAu)
+		}
+	}
 }
